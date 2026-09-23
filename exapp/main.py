@@ -35,7 +35,7 @@ NEXTCLOUD_URL = os.getenv("NEXTCLOUD_URL", "").rstrip("/")
 if not NEXTCLOUD_URL.startswith(("http://", "https://")):
     raise RuntimeError(
         "NEXTCLOUD_URL is missing or invalid. "
-        "Set NEXTCLOUD_URL in the PyCharm Run Configuration. "
+        "Set NEXTCLOUD_URL in the Run Configuration. "
         "Example: http://192.168.1.2:8080"
     )
 CONFIG_FILE = os.getenv("AI_ORGANIZER_CONFIG", "config.yaml")
