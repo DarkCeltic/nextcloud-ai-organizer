@@ -1,0 +1,12 @@
+requests
+PyYAML
+pypdf
+python-docx
+odfpy
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.34,<1.0
+pydantic>=2.0,<3.0
+
+python-dotenv
+openpyxl
+starlette

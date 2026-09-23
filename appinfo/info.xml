@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <id>ai_nextcloud_organizer</id>
+    <name>AI Organizer</name>
+    <summary>Local-AI organization suggestions and one-click apply actions for Nextcloud files.</summary>
+    <description>Analyze a selected Nextcloud file with the existing local Ollama classifier, review filename/folder/tag suggestions, and selectively apply them. Paperless candidates can be moved to the configured consume folder.</description>
+    <version>0.1.0</version>
+    <licence>agpl</licence>
+    <author>Local deployment</author>
+    <dependencies>
+        <nextcloud min-version="33" max-version="34" />
+    </dependencies>
+    <external-app>
+        <routes>
+            <route>
+                <url>^/api/settings(?:/.*)?$</url>
+                <verb>GET,POST,PUT</verb>
+                <access_level>ADMIN</access_level>
+                <headers_to_exclude>[]</headers_to_exclude>
+                <bruteforce_protection>[401,429]</bruteforce_protection>
+            </route>
+            <route>
+                <url>^(?!/api/settings(?:/|$)).*</url>
+                <verb>GET,POST,PUT,DELETE</verb>
+                <access_level>USER</access_level>
+                <headers_to_exclude>[]</headers_to_exclude>
+                <bruteforce_protection>[401,403,500]</bruteforce_protection>
+            </route>
+        </routes>
+    </external-app>
+</info>
