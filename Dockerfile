@@ -1,30 +1,28 @@
 FROM python:3.12-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    AI_ORGANIZER_CONFIG=/app/config.yaml \
-    APP_HOST=0.0.0.0 \
-    APP_PORT=23000
-
 WORKDIR /app
 
-# Install dependencies first so Docker can reuse this layer when only source changes.
-COPY requirements.txt /app/requirements.txt
-RUN pip install --upgrade pip \
-    && pip install -r /app/requirements.txt
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
-# Application source.
-COPY main.py analyze.py apply.py file_action.py /app/
-COPY organizer.py classifier.py scanner.py nextcloud.py database.py ollama.py /app/
+COPY requirements.txt /app/requirements.txt
+
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r /app/requirements.txt
+
+# AI Organizer ExApp
+COPY exapp /app/exapp
+
+# Organizer backend
+COPY python_organizer_local_llm /app/python_organizer_local_llm
+
+# Configuration
 COPY config.yaml /app/config.yaml
-COPY static /app/static
+
+# Nextcloud ExApp metadata
 COPY appinfo /app/appinfo
 
-# AppAPI normally supplies APP_PORT dynamically. 23000 is only the fallback
-# used by manual/local deployments.
-EXPOSE 23000
+EXPOSE 23001
 
-# Do not bake Nextcloud or Ollama credentials into the image.
-# AppAPI injects its own ExApp variables at deployment time.
-CMD ["sh", "-c", "exec uvicorn main:app --host ${APP_HOST:-0.0.0.0} --port ${APP_PORT:-23000} --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["uvicorn", "exapp.main:app", "--host", "0.0.0.0", "--port", "23001"]
