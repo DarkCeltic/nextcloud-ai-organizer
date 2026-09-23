@@ -6,4 +6,4 @@ data/
 *.db
 *.db-*
 config.yaml
-.idea/*
+.idea/
