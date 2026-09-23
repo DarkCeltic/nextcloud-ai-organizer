@@ -203,13 +203,6 @@ History is an audit trail of the organizer's records, **not** a backup or a way 
 
 This project is designed for self-hosted Nextcloud and a local/self-hosted Ollama endpoint. It does **not** require a commercial cloud LLM, but document contents are transmitted to your **configured** Ollama server, and Paperless-bound files are transferred to the **configured** consume folder. You control those hosts and network paths.
 
-Before making this repository public:
-
-- Remove real credentials, personal hostnames, internal addresses, document contents, and database files from tracked files and examples.
-- Add `config.yaml`, `.env`, `.env.*`, `data/`, `*.db`, `*.db-wal`, and `*.db-shm` to `.gitignore` as appropriate; track only sanitized sample configurations instead.
-- Revoke and regenerate any Nextcloud app password or AppAPI secret that was ever committed to Git, including in old commits. A `.gitignore` entry does **not** remove a secret from existing Git history.
-- Test on disposable or backed-up files. Review AI-generated suggestions before applying moves or renames.
-
 ## Troubleshooting
 
 | Symptom | What to check |
