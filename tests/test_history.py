@@ -164,12 +164,12 @@ def test_refactored_frontend_scopes_every_view_and_keeps_single_list():
     assert source.count('function showHistoryRecord(') == 1
     assert source.count('function selectView(') == 1
     assert source.count('fileList.addEventListener(\'click\'') == 1
-    assert "['unprocessed', 'review', 'failed', 'history']" in source
+    assert "['unprocessed', 'review', 'failed', 'history', 'settings']" in source
     assert source.index('const fileList = ') < source.index('function showHistoryRecord(')
     assert source.index('function showHistoryRecord(') < source.index('function selectView(')
     assert source.index('function selectView(') < source.index('if (document.readyState')
     assert 'Coming later' not in source
-    assert 'Read-only history.' in source
+    assert 'History is preserved. Re-analyze to create a NEW suggestion for Review.' in source
     if shutil.which('node'):
         completed = subprocess.run(
             ['node', '--check', str(ROOT / 'exapp/static/app.js')],
@@ -237,6 +237,7 @@ def test_apply_endpoint_stores_manual_paths_and_tags(db):
         'suggestion_id': sid, 'actions': ['filename','folder','tags'],
         'suggested_filename': 'Custom.docx',
         'suggested_folder': '/Custom Folder', 'tags': ['my-tag'],
+        'destination': 'nextcloud',
     })
     assert result.status_code == 200, result.text
     assert result.json()['complete'] is True
@@ -255,6 +256,7 @@ def test_apply_partial_failure_persists_last_successful_move(db):
         'suggestion_id': sid, 'actions': ['filename','folder','tags'],
         'suggested_filename': 'Custom.docx',
         'suggested_folder': '/Custom Folder', 'tags': ['my-tag'],
+        'destination': 'nextcloud',
     })
     assert response.status_code == 502
     row = db.get_suggestion(sid)

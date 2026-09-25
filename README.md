@@ -64,30 +64,51 @@ The sidebar switches the active view. The right side displays that view's file l
 - A reachable Ollama server with a downloaded model, such as `qwen2.5:7b`.
 - A persistent location for the organizer's SQLite database.
 - **Optional:** Paperless-ngx and a consume folder accessible through the configured Nextcloud path.
-- **Optional:** The OCR dependencies included in the OCR-enabled Docker build, for image-only/scanned PDFs.
+- **Optional:** `ocrmypdf` and its system dependencies for image-only/scanned PDFs. The current base Dockerfile does not install that OCR toolchain yet, so OCR will report a clear Failed-state error until an OCR-capable image is built.
 
 Ollama can run on another host on your LAN. Use an address reachable **from the ExApp container**, not `localhost` unless Ollama actually runs inside that same network namespace. Your files' extracted text is sent to whichever Ollama endpoint you configure, so use a server you trust.
 
 ## Installation and configuration
 
-> This is a configuration guide, not a one-command installer. ExApp registration and networking depend on your Nextcloud AppAPI deployment. Use the Docker/AppAPI deployment files from this repository and the instructions appropriate to your deployment method. The OCR-enabled release requires rebuilding the image to include its system dependencies; replacing Python files alone is not sufficient.
+The repository separates **deployment settings** from **organizer behavior**:
 
-1. Clone the repository and configure your Nextcloud AppAPI deployment to run the ExApp. Give the container network access to Nextcloud and Ollama.
-2. Create a private `config.yaml` using the sanitized example in this README, then set your real Nextcloud address, username, **app password**, scan paths, and Ollama address. Never commit the populated file.
-3. Configure the AppAPI-provided ExApp secret and Nextcloud URL using private environment settings. Do not invent an `APP_SECRET` or commit it to Git.
-4. Mount or otherwise persist the directory containing the configured SQLite database. Back up an existing database before upgrading versions that change its schema.
-5. Build/deploy the current ExApp image, register/enable it through AppAPI, and confirm its heartbeat succeeds. If you are using the OCR version, rebuild the image so its OCR dependencies are installed.
-6. Open **AI Organizer** in Nextcloud. Configure **Settings → Paperless**, **Settings → OCR**, and **Settings → File Types**, then try a noncritical document in your scan folder before applying recommendations to important files.
+- `.env` / container environment: service addresses, user credentials, AppAPI credentials, and the initial Paperless enable/disable choice.
+- `config.yaml`: non-secret behavior defaults such as scan paths, timeouts, classifier limits, Paperless category policy, and the SQLite path.
+- SQLite-backed Settings UI: administrator changes made after installation. Saved UI values take precedence over the corresponding initial Ollama/Paperless defaults on later restarts.
 
-### Example configuration (`config.yaml`)
+### 1. Create your private `.env`
 
-The addresses and paths below are examples, **not** values for your own environment. Use this example to create `config.yaml` locally and populate your private credentials.
+Copy `.env.example` to `.env` and fill in your own values. The real `.env` is intentionally excluded by both `.gitignore` and `.dockerignore`.
+
+```env
+# Required for a new installation. Neither value has a model/server default.
+OLLAMA_URL=http://192.168.1.2:11434
+OLLAMA_MODEL=YOUR_INSTALLED_MODEL
+
+# Optional. If omitted, the initial value is false.
+PAPERLESS_ENABLED=false
+
+# Current direct WebDAV/OCS client authentication.
+NEXTCLOUD_URL=http://192.168.1.2:8080
+NEXTCLOUD_USERNAME=YOUR_NEXTCLOUD_USER
+NEXTCLOUD_APP_PASSWORD=YOUR_NEXTCLOUD_APP_PASSWORD
+
+# AppAPI identity/secret. APP_SECRET is NOT the user's Nextcloud app password.
+# AppAPI normally supplies these for a managed ExApp deployment.
+APP_SECRET=YOUR_EXISTING_APPAPI_SECRET
+APP_USER=admin
+```
+
+`OLLAMA_URL` should be an address reachable **from inside the ExApp container**. `localhost` points back to the AI Organizer container itself, so it is normally incorrect when Ollama runs on another host or container.
+
+The project deliberately does **not** choose an Ollama model for the user. `OLLAMA_MODEL` must name a model that already exists on the configured Ollama server.
+
+### 2. Create non-secret `config.yaml`
+
+For a repository/Compose deployment, copy `config.example.yaml` to `config.yaml`. Do not put passwords, app secrets, or deployment URLs in this file.
 
 ```yaml
 nextcloud:
-  url: "http://192.168.1.2:8080/"
-  username: "YOUR_NEXTCLOUD_USER"
-  app_password: "REPLACE_WITH_NEXTCLOUD_APP_PASSWORD"
   verify_ssl: true
   timeout: 60
   folder_tree_paths:
@@ -99,6 +120,8 @@ scanner:
   exclude_paths:
     - "/paperless-media"
     - "/inbox"
+    - "/Photos"
+    - "/AI Ignored"
   allowed_extensions:
     - pdf
     - txt
@@ -113,8 +136,6 @@ scanner:
     - xlsx
 
 ollama:
-  url: "http://192.168.1.3:11434"
-  model: "qwen2.5:7b"
   timeout: 180
   temperature: 0
 
@@ -125,17 +146,16 @@ classifier:
   minimum_confidence: 0.70
 
 paperless:
-  enabled: true
   inbox_path: "/inbox"
   never_send:
     - resume
     - cv
+    - curriculum vitae
     - cover letter
     - portfolio
     - source_code
     - project
     - template
-
   prefer_send:
     - receipt
     - invoice
@@ -146,33 +166,53 @@ paperless:
     - warranty
 
 database:
-  path: "./data/organizer.db"
+  path: "/app/data/python_organizer_local_llm.db"
 ```
 
-The example reflects the project's YAML-based connection and scan configuration. Settings saved through the ExApp's UI, including newer file-type and routing preferences, are stored in SQLite; do not assume changing this example alone replaces choices already saved through the UI. The example does not include real credentials.
+The Docker image copies the sanitized `config.example.yaml` to `/app/config.yaml`, so a clean GitHub/Docker build never depends on the ignored private `config.yaml` file. A manual Compose deployment may mount your own non-secret `config.yaml` over that path.
 
-### ExApp environment variables
-
-The existing FastAPI entry point reads the following settings:
-
-| Variable | Purpose |
-| --- | --- |
-| `NEXTCLOUD_URL` | Base URL used by the ExApp to communicate with Nextcloud/AppAPI; required by the current entry point. |
-| `APP_SECRET` | Secret provided for ExApp–AppAPI communication; keep private. |
-| `APP_ID` | ExApp identifier; current default: `ai_nextcloud_organizer`. |
-| `APP_VERSION` | App version; current default: `0.1.0`. |
-| `AA_VERSION` | AppAPI protocol version declared by the entry point; current default: `4.0.0`. |
-| `APP_USER` | Registration user; current default: `admin`. |
-| `AI_ORGANIZER_CONFIG` | Path to your private YAML config; default: `config.yaml`. |
-| `LOG_LEVEL` | Logging verbosity, for example `INFO` or `DEBUG`. |
-
-For local Python development, install the dependencies from the repository's requirements file, provide the same config and environment settings, and start the FastAPI app with:
+### 3. Build and test the container
 
 ```bash
-uvicorn exapp.main:app --host 0.0.0.0 --port 23001
+docker build -t ai-nextcloud-organizer:test .
+docker run --rm --env-file .env ai-nextcloud-organizer:test
 ```
 
-This launches the development service; Nextcloud integration still requires working AppAPI registration and networking. Binding to `0.0.0.0` exposes the development service on reachable network interfaces: use a suitable firewall and do not publish it directly to the internet.
+For manual Compose/Portainer deployment, the default mount uses `config.example.yaml`. If you want a customized non-secret file, copy it to `config.yaml` and set `AI_ORGANIZER_CONFIG_FILE=./config.yaml` in `.env`, then run:
+
+```bash
+docker compose up -d
+```
+
+The Compose file keeps `/app/data` on the `ai_organizer_data` volume. Back up that volume/database before upgrades that change storage behavior or schema.
+
+### Environment variables
+
+All direct environment access is centralized in `python_organizer_local_llm/settings.py`.
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `OLLAMA_URL` | Ollama server reachable from the ExApp container. Required for a new install unless an existing saved/legacy configuration supplies it. | none |
+| `OLLAMA_MODEL` | Ollama model to use. Required for a new install unless already saved/configured. | none |
+| `PAPERLESS_ENABLED` | Initial Paperless integration state. The Settings UI can later persist a different value in SQLite. | `false` |
+| `NEXTCLOUD_URL` | Nextcloud base URL used by AppAPI calls and the direct Nextcloud client. | none |
+| `NEXTCLOUD_USERNAME` | Nextcloud user used by the current direct WebDAV/OCS client. | none |
+| `NEXTCLOUD_APP_PASSWORD` | Nextcloud **user app password** for WebDAV/OCS. Keep private. | none |
+| `APP_SECRET` | AppAPI shared secret for ExApp-to-AppAPI calls. This is not `NEXTCLOUD_APP_PASSWORD`. | none |
+| `APP_USER` | AppAPI registration user used by the current registration request. | `admin` |
+| `APP_ID` | ExApp identifier. | `ai_nextcloud_organizer` |
+| `APP_VERSION` | ExApp version used by the FastAPI/AppAPI headers. | `0.1.0` |
+| `AA_VERSION` | AppAPI protocol header version. | `4.0.0` |
+| `AI_ORGANIZER_CONFIG` | Non-secret YAML configuration path inside the container. | `config.yaml` |
+| `LOG_LEVEL` | Logging verbosity. `DEBUG` enables debug logging; other values use normal INFO logging. | `INFO` |
+
+For local Python development, install `requirements.txt`, provide the same environment variables, and start:
+
+```bash
+uvicorn exapp.main:app --host 0.0.0.0 --port 23000
+```
+
+Binding to `0.0.0.0` exposes the development service on reachable interfaces. Use a suitable firewall and do not publish the ExApp directly to the internet.
 
 ## Paperless behavior
 
@@ -223,6 +263,6 @@ Issues and pull requests are welcome. When reporting a problem, include a descri
 
 ## License
 
-**GNU Affero General Public License v3.0 or later (`AGPL-3.0-or-later`).** See the repository's `LICENSE` file for the full license text. Add the full license file to the repository before publication if it is not already present. Third-party dependencies and any reused third-party code retain their respective licenses.
+**GNU Affero General Public License v3.0 or later (`AGPL-3.0-or-later`).** See the repository's `LICENSE.md` file for the full license text. Add the full license file to the repository before publication if it is not already present. Third-party dependencies and any reused third-party code retain their respective licenses.
 
 This is an independent project and is not an official Nextcloud, Ollama, or Paperless-ngx product.

@@ -1,21 +1,16 @@
 # Nextcloud AI Organizer
 #
-# IMPORTANT:
-# Use a Nextcloud APP PASSWORD here, not your normal account password.
-# In Docker/Portainer, you can later replace credentials with environment
-# variables or Docker secrets.
+# Deployment-specific addresses and credentials belong in environment variables
+# (.env for local/manual Docker testing). This file contains only non-secret
+# application behavior defaults.
 
 nextcloud:
-  url: "http://192.168.1.2:8080/"
-  username: "Your UserName"
-  app_password: "" # supply NEXTCLOUD_APP_PASSWORD from .env
-
-  # Set false only if you intentionally use a self-signed certificate
-  # that this container cannot validate yet.
-  verify_ssl: false
+  # Keep TLS verification enabled for HTTPS unless you intentionally use a
+  # self-signed certificate that the container cannot validate yet.
+  verify_ssl: true
   timeout: 60
 
-  # Folder roots used when giving Qwen your existing folder structure.
+  # Folder roots used when giving the LLM your existing folder structure.
   # "/" means the user's whole Files root.
   folder_tree_paths:
     - "/"
@@ -44,36 +39,20 @@ scanner:
     - xlsx
 
 ollama:
-  # Replace this with the LAN address of the PC running Ollama.
-  # Example:
-  url: "http://localhost:11434" # change to LAN IP in Settings if Ollama runs on another host
-
-  model: "qwen2.5:7b"
+  # OLLAMA_URL and OLLAMA_MODEL are deployment settings and are intentionally
+  # not defined here. They must be supplied for a new installation.
   timeout: 180
   temperature: 0
 
 classifier:
-  # One document is sent per request.
   max_content_chars: 8000
-
-  # Avoid sending an enormous folder/tag list to the model.
   max_folder_entries: 500
   max_tag_entries: 200
-
-  # Suggestions below this value are still stored, but should
-  # be treated as low-confidence during review.
   minimum_confidence: 0.70
 
 paperless:
-  enabled: true
-
-  # This is the Nextcloud external-storage path you use for
-  # Paperless consume.
-  inbox_path: "/inbox"
-
-  # These document categories must remain in Nextcloud even if the
-  # local LLM mistakenly marks them as Paperless candidates.
-  # Values are normalized, so spaces/hyphens/underscores are equivalent.
+  # These document categories must remain in Nextcloud even if the local LLM
+  # mistakenly marks them as Paperless candidates.
   never_send:
     - resume
     - cv
@@ -84,6 +63,7 @@ paperless:
     - project
     - template
 
+  # Advisory category preferences. never_send always takes precedence.
   prefer_send:
     - receipt
     - invoice
@@ -94,5 +74,5 @@ paperless:
     - warranty
 
 database:
-  # Keep this on a persistent Docker volume.
-  path: "/app/data/organizer.db"
+  # Manual Docker/Compose path. Keep /app/data on a persistent volume.
+  path: "/app/data/ai_organizer.db"

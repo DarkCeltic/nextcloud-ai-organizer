@@ -1,0 +1,50 @@
+# Manual/Portainer deployment. Do NOT run alongside an AppAPI-managed instance
+# of the same ExApp. Set AI_ORGANIZER_IMAGE to a Docker Hub image when desired.
+services:
+  ai-organizer:
+    image: ${AI_ORGANIZER_IMAGE:-ai-nextcloud-organizer:latest}
+    container_name: ai-organizer-manual
+    restart: unless-stopped
+    init: true
+    environment:
+      AI_ORGANIZER_CONFIG: /app/config.yaml
+      APP_HOST: 0.0.0.0
+      APP_PORT: "23000"
+      NEXTCLOUD_URL: ${NEXTCLOUD_URL:?Set NEXTCLOUD_URL in .env}
+      NEXTCLOUD_APP_PASSWORD: ${NEXTCLOUD_APP_PASSWORD:?Set NEXTCLOUD_APP_PASSWORD in .env}
+      NEXTCLOUD_USERNAME: ${NEXTCLOUD_USERNAME:?Set NEXTCLOUD_USERNAME in .env}
+      OLLAMA_URL: ${OLLAMA_URL:?Set OLLAMA_URL in .env}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:?Set OLLAMA_MODEL in .env}
+      PAPERLESS_ENABLED: ${PAPERLESS_ENABLED:-false}
+      APP_SECRET: ${APP_SECRET:?Supply the existing AppAPI registration secret}
+      APP_USER: ${APP_USER:-admin}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ai_organizer_data:/app/data
+      - ${AI_ORGANIZER_CONFIG_FILE:-./config.example.yaml}:/app/config.yaml:ro
+    # No published host ports: browser access must go through Nextcloud/AppAPI.
+    # Keep the Nextcloud Docker network private; other containers on that network
+    # can otherwise bypass AppAPI's administrator access checks.
+    expose:
+      - "23000"
+    networks:
+      nextcloud-net:
+        aliases:
+          - ai_nextcloud_organizer
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:23000/heartbeat',timeout=5)"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  ai_organizer_data:
+    name: ai_organizer_data
+
+networks:
+  nextcloud-net:
+    external: true
+    name: nextcloud-net

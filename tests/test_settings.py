@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 import pytest
 
 from python_organizer_local_llm.database import Database
-from python_organizer_local_llm.settings import SettingsService
+from python_organizer_local_llm.settings import SettingsService, load_environment_settings
 from exapp.automation import AutomationScheduler
 
 
@@ -125,8 +125,55 @@ def test_compose_and_config_contain_no_embedded_secret():
     import yaml
     compose = yaml.safe_load((root / 'compose.yaml').read_text())
     assert compose['services']['ai-organizer']['volumes'][0] == 'ai_organizer_data:/app/data'
-    assert compose['services']['ai-organizer']['image'] == 'ai-nextcloud-organizer:settings'
-    assert (root / 'Dockerfile').exists()
-    config = yaml.safe_load((root / 'config.yaml').read_text())
-    assert config['nextcloud']['app_password'] == ''
+    assert 'ai-nextcloud-organizer:latest' in compose['services']['ai-organizer']['image']
+    dockerfile = (root / 'Dockerfile').read_text()
+    assert 'COPY config.example.yaml /app/config.yaml' in dockerfile
+    dockerignore = (root / '.dockerignore').read_text()
+    assert 'config.yaml' in dockerignore and '.env' in dockerignore
+    config = yaml.safe_load((root / 'config.example.yaml').read_text())
+    assert not {'url', 'username', 'app_password', 'password'} & set(config['nextcloud'])
+    assert 'url' not in config['ollama'] and 'model' not in config['ollama']
+    assert 'enabled' not in config['paperless']
     assert config['database']['path'].startswith('/app/data/')
+
+
+def test_environment_settings_have_no_ollama_model_default(monkeypatch):
+    for name in (
+        'OLLAMA_URL', 'OLLAMA_MODEL', 'PAPERLESS_ENABLED', 'NEXTCLOUD_URL',
+        'NEXTCLOUD_USERNAME', 'NEXTCLOUD_APP_PASSWORD',
+    ):
+        monkeypatch.delenv(name, raising=False)
+    env = load_environment_settings(load_env_file=False)
+    assert env.ollama_url == ''
+    assert env.ollama_model == ''
+    assert env.paperless_enabled is False
+    assert env.paperless_enabled_from_env is False
+
+
+def test_environment_settings_parse_runtime_values(monkeypatch):
+    monkeypatch.setenv('OLLAMA_URL', 'http://192.168.1.2:11434/')
+    monkeypatch.setenv('OLLAMA_MODEL', 'local-model:7b')
+    monkeypatch.setenv('PAPERLESS_ENABLED', 'yes')
+    monkeypatch.setenv('NEXTCLOUD_URL', 'http://192.168.1.3:8080/')
+    monkeypatch.setenv('NEXTCLOUD_USERNAME', 'tester')
+    monkeypatch.setenv('NEXTCLOUD_APP_PASSWORD', 'secret-value')
+    env = load_environment_settings(load_env_file=False)
+    assert env.ollama_url == 'http://192.168.1.2:11434'
+    assert env.ollama_model == 'local-model:7b'
+    assert env.paperless_enabled is True and env.paperless_enabled_from_env is True
+    assert env.nextcloud_url == 'http://192.168.1.3:8080'
+    assert env.nextcloud_username == 'tester'
+    assert 'secret-value' not in repr(env)
+
+
+def test_environment_reads_are_centralized_in_settings_module():
+    root = Path(__file__).resolve().parents[1]
+    offenders = []
+    for folder in ('exapp', 'python_organizer_local_llm'):
+        for path in (root / folder).rglob('*.py'):
+            if path.name == 'settings.py' and folder == 'python_organizer_local_llm':
+                continue
+            source = path.read_text(encoding='utf-8')
+            if 'os.getenv(' in source or 'os.environ[' in source:
+                offenders.append(str(path.relative_to(root)))
+    assert offenders == []

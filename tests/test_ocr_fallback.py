@@ -100,7 +100,9 @@ def test_disabled_fallback_is_explicit_failure():
         cloud.get_file_text_with_metadata('/x.pdf')
 
 
-def test_settings_migrate_and_persist_and_clear_ocr_cache(tmp_path):
+def test_settings_migrate_and_persist_and_clear_ocr_cache(tmp_path, monkeypatch):
+    monkeypatch.setenv("OLLAMA_URL", "http://localhost:11434")
+    monkeypatch.setenv("OLLAMA_MODEL", "test-model:latest")
     config = tmp_path / 'config.yaml'
     config.write_text(f'database:\n  path: "{tmp_path / "ocr.db"}"\nscanner:\n  scan_paths: ["/AI Inbox"]\n', encoding='utf-8')
     db = Database(str(config)); db.initialize()

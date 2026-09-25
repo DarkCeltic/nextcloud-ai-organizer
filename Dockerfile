@@ -11,18 +11,11 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r /app/requirements.txt
 
-# AI Organizer ExApp
 COPY exapp /app/exapp
-
-# Organizer backend
 COPY python_organizer_local_llm /app/python_organizer_local_llm
-
-# Configuration
-COPY config.yaml /app/config.yaml
-
-# Nextcloud ExApp metadata
+COPY config.example.yaml /app/config.yaml
 COPY appinfo /app/appinfo
 
-EXPOSE 23001
+EXPOSE 23000
 
-CMD ["uvicorn", "exapp.main:app", "--host", "0.0.0.0", "--port", "23001"]
+CMD ["sh", "-c", "uvicorn exapp.main:app --host ${APP_HOST:-0.0.0.0} --port ${APP_PORT:-23000}"]

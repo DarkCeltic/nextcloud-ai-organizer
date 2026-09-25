@@ -1,9 +1,16 @@
 .env
+.env.*
+!.env.example
 __pycache__/
 .pytest_cache/
 .venv/
 data/
 *.db
 *.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.log
 config.yaml
 .idea/
+.vscode/

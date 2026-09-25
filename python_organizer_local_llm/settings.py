@@ -2,28 +2,160 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass, field
 import math
+import os
 import re
 import threading
 from urllib.parse import urlsplit
+
+from dotenv import load_dotenv
 
 from python_organizer_local_llm.file_types import (
     extensions_for, from_extensions, validate_ids,
 )
 
 
+@dataclass(frozen=True)
+class EnvironmentSettings:
+    """Deployment/runtime settings sourced only from environment variables.
+
+    User-editable organizer behavior remains in :class:`SettingsService` and
+    SQLite. Secrets are deliberately excluded from that persisted settings
+    payload.
+    """
+
+    app_id: str = "ai_nextcloud_organizer"
+    app_version: str = "0.1.0"
+    app_api_version: str = "4.0.0"
+    app_secret: str = field(default="", repr=False)
+    app_user: str = "admin"
+    nextcloud_url: str = ""
+    nextcloud_username: str = ""
+    nextcloud_app_password: str = field(default="", repr=False)
+    config_file: str = "config.yaml"
+    log_level: str = "INFO"
+    ollama_url: str = ""
+    ollama_model: str = ""
+    paperless_enabled: bool = False
+    paperless_inbox: str = ""
+    paperless_enabled_from_env: bool = False
+
+    @property
+    def debug_logging(self) -> bool:
+        return self.log_level == "DEBUG"
+
+    def require_exapp_url(self) -> str:
+        """Return a validated Nextcloud URL for the FastAPI/AppAPI entry point."""
+        if not self.nextcloud_url:
+            raise RuntimeError(
+                "NEXTCLOUD_URL is required. Set it in the container environment "
+                "or local .env file. Example: http://192.168.1.2:8080"
+            )
+        _validate_http_origin("NEXTCLOUD_URL", self.nextcloud_url)
+        return self.nextcloud_url
+
+
+def _env(name: str, default: str = "") -> str:
+    """Read and trim one environment variable. Keep all os.getenv calls here."""
+    return str(os.getenv(name, default) or "").strip()
+
+
+def _env_bool(name: str, default: bool = False) -> tuple[bool, bool]:
+    raw = os.getenv(name)
+    if raw is None or not str(raw).strip():
+        return default, False
+    value = str(raw).strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True, True
+    if value in {"0", "false", "no", "off"}:
+        return False, True
+    raise RuntimeError(
+        f"{name} must be one of: true, false, 1, 0, yes, no, on, off"
+    )
+
+
+def _validate_http_origin(name: str, value: str) -> None:
+    parts = urlsplit(value)
+    if (parts.scheme not in {"http", "https"} or not parts.hostname
+            or parts.username or parts.password or parts.query or parts.fragment):
+        raise RuntimeError(
+            f"{name} must be an http(s) URL without embedded credentials, "
+            "query parameters, or fragments."
+        )
+
+
+def load_environment_settings(*, load_env_file: bool = True) -> EnvironmentSettings:
+    """Load deployment settings. Real environment variables override ``.env``.
+
+    ``python-dotenv`` is only a local-development convenience. Docker/AppAPI
+    should inject the same variables at container start.
+    """
+    if load_env_file:
+        load_dotenv(override=False)
+
+    paperless_enabled, paperless_explicit = _env_bool("PAPERLESS_ENABLED", False)
+    paperless_inbox = _env("INBOX_PATH")
+    nextcloud_url = _env("NEXTCLOUD_URL").rstrip("/")
+    ollama_url = _env("OLLAMA_URL").rstrip("/")
+
+    if nextcloud_url:
+        _validate_http_origin("NEXTCLOUD_URL", nextcloud_url)
+    if ollama_url:
+        _validate_http_origin("OLLAMA_URL", ollama_url)
+
+    return EnvironmentSettings(
+        app_id=_env("APP_ID", "ai_nextcloud_organizer"),
+        app_version=_env("APP_VERSION", "0.1.0"),
+        app_api_version=_env("AA_VERSION", "4.0.0"),
+        app_secret=_env("APP_SECRET"),
+        app_user=_env("APP_USER", "admin"),
+        nextcloud_url=nextcloud_url,
+        nextcloud_username=_env("NEXTCLOUD_USERNAME"),
+        nextcloud_app_password=_env("NEXTCLOUD_APP_PASSWORD"),
+        config_file=_env("AI_ORGANIZER_CONFIG", "config.yaml"),
+        log_level=_env("LOG_LEVEL", "INFO").upper(),
+        ollama_url=ollama_url,
+        ollama_model=_env("OLLAMA_MODEL"),
+        paperless_enabled=paperless_enabled,
+        paperless_inbox=paperless_inbox,
+        paperless_enabled_from_env=paperless_explicit,
+    )
+
+
 class SettingsService:
     def __init__(self, organizer):
         self.organizer = organizer
         self.lock = threading.RLock()
-        self.defaults = self._defaults()
         stored = organizer.database.load_settings()
+        self.defaults = self._defaults(stored)
         self.values = self.validate({**self.defaults, **stored})
         self._apply(self.values)
 
-    def _defaults(self):
+    def _defaults(self, stored=None):
+        stored = stored or {}
         config = self.organizer.classifier.config
         ollama = config.get('ollama', {})
+        runtime = getattr(self.organizer, 'runtime_settings', None)
+        if runtime is None:
+            runtime = load_environment_settings(load_env_file=False)
+
+        ollama_url = str(
+            stored.get('ollama_url') or runtime.ollama_url or ollama.get('url') or ''
+        ).strip().rstrip('/')
+        model = str(
+            stored.get('model') or runtime.ollama_model or ollama.get('model') or ''
+        ).strip()
+        if not ollama_url:
+            raise RuntimeError(
+                'OLLAMA_URL is required for a new installation. Set it in .env/container '
+                'environment, or retain an existing saved/configured Ollama URL.'
+            )
+        if not model:
+            raise RuntimeError(
+                'OLLAMA_MODEL is required for a new installation. Set it to a model that '
+                'already exists on your Ollama server.'
+            )
         classifier = config.get('classifier', {})
         ocr = config.get('ocr', {})
         scanner = self.organizer.scanner
@@ -31,8 +163,8 @@ class SettingsService:
         if isinstance(prefer_send, str):
             prefer_send = [prefer_send]
         return {
-            'ollama_url': str(ollama.get('url', 'http://localhost:11434')),
-            'model': str(ollama.get('model', 'qwen2.5:7b')),
+            'ollama_url': ollama_url,
+            'model': model,
             'timeout': int(ollama.get('timeout', 180)),
             'temperature': float(ollama.get('temperature', 0.1)),
             'max_content_chars': int(classifier.get('max_content_chars', 8000)),
@@ -49,7 +181,8 @@ class SettingsService:
             'minimum_auto_confidence': 0.95,
             'global_instructions': '',
             'folder_rules': [],
-            'paperless_enabled': bool(config.get('paperless', {}).get('enabled', False)),
+            'paperless_enabled': (runtime.paperless_enabled if runtime.paperless_enabled_from_env
+                                  else bool(config.get('paperless', {}).get('enabled', False))),
             'paperless_inbox': str(config.get('paperless', {}).get('inbox_path', '/inbox')),
             'paperless_prefer_send': list(prefer_send),
         }
@@ -92,7 +225,9 @@ class SettingsService:
         v['file_types'] = validate_ids(v['file_types'])
         url = str(v['ollama_url']).strip().rstrip('/')
         parts = urlsplit(url)
-        if parts.scheme not in ('http', 'https') or not parts.hostname or parts.username or parts.password or parts.path not in ('', '/') or parts.query or parts.fragment:
+        if parts.scheme not in ('http',
+                                'https') or not parts.hostname or parts.username or parts.password or parts.path not in (
+                '', '/') or parts.query or parts.fragment:
             raise ValueError('Ollama URL must be an http(s) host and optional port, without credentials or path')
         v['ollama_url'] = url
         v['model'] = str(v['model']).strip()

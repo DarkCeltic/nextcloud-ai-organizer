@@ -14,6 +14,7 @@ import yaml
 
 from python_organizer_local_llm.sensitive import is_sensitive, safe_suggestion
 from python_organizer_local_llm.suggestion_policy import improve_suggestion
+from python_organizer_local_llm.settings import EnvironmentSettings, load_environment_settings
 
 
 class Classifier:
@@ -31,9 +32,14 @@ class Classifier:
       - Send files to Paperless
     """
 
-    def __init__(self, config_file: str = "config.yaml"):
+    def __init__(
+            self,
+            config_file: str = "config.yaml",
+            runtime_settings: Optional[EnvironmentSettings] = None,
+    ):
         self.log = logging.getLogger("classifier")
         self.config = self._load_config(config_file)
+        runtime = runtime_settings or load_environment_settings(load_env_file=False)
         self.global_instructions = ""
         self.folder_rules = []
         # Request-local limit: one bounded inference for Paperless overrides.
@@ -41,15 +47,15 @@ class Classifier:
 
         ollama_config = self.config.get("ollama", {})
 
-        self.base_url = ollama_config.get(
-            "url",
-            "http://localhost:11434",
-        ).rstrip("/")
+        # Deployment environment values seed new installs. Persisted admin
+        # settings are applied later by SettingsService and remain editable.
+        self.base_url = str(
+            runtime.ollama_url or ollama_config.get("url") or ""
+        ).strip().rstrip("/")
 
-        self.model = ollama_config.get(
-            "model",
-            "qwen2.5:7b",
-        )
+        self.model = str(
+            runtime.ollama_model or ollama_config.get("model") or ""
+        ).strip()
 
         self.timeout = int(
             ollama_config.get(
@@ -103,16 +109,14 @@ class Classifier:
             {},
         )
 
-        self.paperless_enabled = bool(
-            paperless_config.get(
-                "enabled",
-                True,
-            )
+        self.paperless_enabled = (
+            runtime.paperless_enabled
+            if runtime.paperless_enabled_from_env
+            else bool(paperless_config.get("enabled", False))
         )
 
-        self.paperless_inbox = paperless_config.get(
-            "inbox_path",
-            "/inbox",
+        self.paperless_inbox = (
+            runtime.paperless_inbox
         )
 
         never_send = paperless_config.get(

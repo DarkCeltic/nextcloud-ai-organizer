@@ -14,7 +14,9 @@ from exapp.routes.dashboard import list_history
 
 
 @pytest.fixture
-def system(tmp_path):
+def system(tmp_path, monkeypatch):
+    monkeypatch.setenv("OLLAMA_URL", "http://localhost:11434")
+    monkeypatch.setenv("OLLAMA_MODEL", "test-model:latest")
     config = tmp_path / 'config.yaml'
     config.write_text(f'''database:\n  path: "{tmp_path / 'history.db'}"\npaperless:\n  enabled: true\n  inbox_path: /consume\n  never_send: [resume, cv]\n''')
     db = Database(str(config)); db.initialize()

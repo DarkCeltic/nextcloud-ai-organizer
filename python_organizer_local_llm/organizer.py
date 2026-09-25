@@ -12,6 +12,7 @@ from python_organizer_local_llm.database import Database
 from python_organizer_local_llm.nextcloud import NextcloudClient
 from python_organizer_local_llm.scanner import Scanner
 from python_organizer_local_llm.sensitive import sensitive_filename, safe_suggestion
+from python_organizer_local_llm.settings import EnvironmentSettings, load_environment_settings
 
 DEFAULT_CONFIG = "config.yaml"
 
@@ -53,11 +54,17 @@ class Organizer:
         config_file: str = DEFAULT_CONFIG,
         force: bool = False,
         limit: Optional[int] = None,
+        runtime_settings: Optional[EnvironmentSettings] = None,
     ) -> None:
         self.log = logging.getLogger(self.__class__.__name__)
         self.config_file = config_file
         self.force = force
         self.limit = limit
+        # FastAPI/CLI entry points load .env once and pass the resulting runtime
+        # settings here. Direct library users may rely on real environment variables.
+        self.runtime_settings = runtime_settings or load_environment_settings(
+            load_env_file=False
+        )
 
         if self.limit is not None and self.limit < 1:
             raise ValueError("--limit must be greater than zero.")
@@ -72,11 +79,15 @@ class Organizer:
         # If your existing modules use different constructor signatures,
         # upload them with this file and they can be matched exactly.
         self.database = Database(config_file)
-        self.nextcloud = NextcloudClient(config_file)
-        self.classifier = Classifier(config_file)
+        self.nextcloud = NextcloudClient(
+            config_file, runtime_settings=self.runtime_settings
+        )
+        self.classifier = Classifier(
+            config_file, runtime_settings=self.runtime_settings
+        )
 
         paperless_config = self.classifier.config.get("paperless", {})
-        self.paperless_enabled = bool(paperless_config.get("enabled", True))
+        self.paperless_enabled = self.classifier.paperless_enabled
         self.paperless_inbox = str(
             paperless_config.get("inbox_path", "/inbox")
         ).strip() or "/inbox"
@@ -627,6 +638,7 @@ def main() -> int:
             config_file=args.config,
             force=args.force,
             limit=args.limit,
+            runtime_settings=load_environment_settings(load_env_file=True),
         )
 
         if args.scan_summary:

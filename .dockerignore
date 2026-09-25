@@ -6,11 +6,21 @@ __pycache__
 *.pyc
 *.pyo
 
+# Never send local deployment secrets/config to the Docker build context.
 .env
 .env.*
+config.yaml
+
+# Runtime state belongs on a persistent volume, never in the image.
+data/
 *.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.log
 
 .idea
 .vscode
-
+.pytest_cache
 tests

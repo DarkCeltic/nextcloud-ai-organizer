@@ -7,7 +7,9 @@ from python_organizer_local_llm.settings import SettingsService
 
 
 @pytest.fixture
-def store(tmp_path):
+def store(tmp_path, monkeypatch):
+    monkeypatch.setenv("OLLAMA_URL", "http://localhost:11434")
+    monkeypatch.setenv("OLLAMA_MODEL", "test-model:latest")
     cfg = tmp_path / 'config.yaml'
     cfg.write_text('database:\n  path: "' + str(tmp_path / 'state.db') + '"\n'
                    'paperless:\n  enabled: true\n  inbox_path: /consume\n'

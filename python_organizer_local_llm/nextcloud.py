@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import io
-import os
 import logging
 import mimetypes
 import re
@@ -16,6 +15,7 @@ import yaml
 from python_organizer_local_llm.sensitive import sensitive_filename, sensitive_content
 from python_organizer_local_llm.ocr import recognize_pdf, OCRProcessingError
 from python_organizer_local_llm.file_types import BY_EXTENSION
+from python_organizer_local_llm.settings import EnvironmentSettings, load_environment_settings
 
 
 class NextcloudClient:
@@ -31,28 +31,42 @@ class NextcloudClient:
     DAV_NS = "DAV:"
     NC_NS = "http://nextcloud.org/ns/"
 
-    def __init__(self, config_file: str = "config.yaml"):
+    def __init__(
+            self,
+            config_file: str = "config.yaml",
+            runtime_settings: Optional[EnvironmentSettings] = None,
+    ):
         self.log = logging.getLogger("nextcloud")
         self.config = self._load_config(config_file)
+        runtime = runtime_settings or load_environment_settings(load_env_file=False)
 
         cfg = self.config.get("nextcloud", {})
 
-        self.base_url = str(os.getenv("NEXTCLOUD_INTERNAL_URL") or cfg.get("url", "")).rstrip("/")
-        self.username = str(os.getenv("NEXTCLOUD_USERNAME") or cfg.get("username", ""))
-        self.password = str(os.getenv("NEXTCLOUD_APP_PASSWORD") or cfg.get("app_password", cfg.get("password", "")))
+        # Environment variables are the public-Docker path. YAML fallbacks are
+        # retained for backward compatibility with existing private installs.
+        self.base_url = str(runtime.nextcloud_url or cfg.get("url", "")).rstrip("/")
+        self.username = str(runtime.nextcloud_username or cfg.get("username", ""))
+        self.password = str(
+            runtime.nextcloud_app_password
+            or cfg.get("app_password", cfg.get("password", ""))
+        )
         self.verify_ssl = bool(cfg.get("verify_ssl", True))
         self.timeout = int(cfg.get("timeout", 60))
 
         if not self.base_url:
-            raise RuntimeError("nextcloud.url is required in config.yaml")
+            raise RuntimeError(
+                "NEXTCLOUD_URL is required. Set it in .env/container environment."
+            )
 
         if not self.username:
-            raise RuntimeError("nextcloud.username is required in config.yaml")
+            raise RuntimeError(
+                "NEXTCLOUD_USERNAME is required. Set it in .env/container environment."
+            )
 
         if not self.password:
             raise RuntimeError(
-                "nextcloud.app_password is required in config.yaml. "
-                "Use a Nextcloud app password rather than your normal password."
+                "NEXTCLOUD_APP_PASSWORD is required. Use a Nextcloud app password "
+                "rather than your normal account password."
             )
 
         organizer_cfg = self.config.get("python_organizer_local_llm", {})

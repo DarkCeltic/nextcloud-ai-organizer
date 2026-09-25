@@ -1,16 +1,64 @@
 <?xml version="1.0"?>
 <info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <id>ai_nextcloud_organizer</id>
+    <id>ai_organizer</id>
     <name>AI Organizer</name>
-    <summary>Local-AI organization suggestions and one-click apply actions for Nextcloud files.</summary>
-    <description>Analyze a selected Nextcloud file with the existing local Ollama classifier, review filename/folder/tag suggestions, and selectively apply them. Paperless candidates can be moved to the configured consume folder.</description>
+
+    <summary>
+        Local-AI organization suggestions and one-click apply actions for Nextcloud files.
+    </summary>
+
+    <description>
+        Analyze a selected Nextcloud file with the existing local Ollama classifier,
+        review filename/folder/tag suggestions, and selectively apply them.
+        Paperless candidates can be moved to the configured consume folder.
+    </description>
+
     <version>0.1.0</version>
     <licence>agpl</licence>
     <author>Local deployment</author>
+
     <dependencies>
-        <nextcloud min-version="33" max-version="34" />
+        <nextcloud min-version="33" max-version="34"/>
     </dependencies>
+
     <external-app>
+        <docker-install>
+            <registry>docker.io</registry>
+            <image>darthdragon/ai-organizer</image>
+            <image-tag>0.1.0</image-tag>
+        </docker-install>
+
+        <environment-variables>
+            <variable>
+                <name>OLLAMA_URL</name>
+                <display-name>Ollama URL</display-name>
+                <description>URL of the Ollama server, for example http://192.168.1.2:11434</description>
+            </variable>
+
+            <variable>
+                <name>OLLAMA_MODEL</name>
+                <display-name>Ollama Model</display-name>
+                <description>Ollama model used for document classification</description>
+            </variable>
+
+            <variable>
+                <name>PAPERLESS_ENABLED</name>
+                <display-name>Enable Paperless-ngx</display-name>
+                <description>Enable optional Paperless-ngx integration</description>
+                <default>false</default>
+            </variable>
+
+            <variable>
+                <name>INBOX_PATH</name>
+                <display-name>Paperless Inbox Path</display-name>
+                <description>
+                    Nextcloud folder used for Paperless-ngx documents.
+                    Leave empty when Paperless integration is disabled.
+                </description>
+                <default></default>
+            </variable>
+        </environment-variables>
+
         <routes>
             <route>
                 <url>^/api/settings(?:/.*)?$</url>
@@ -19,6 +67,7 @@
                 <headers_to_exclude>[]</headers_to_exclude>
                 <bruteforce_protection>[401,429]</bruteforce_protection>
             </route>
+
             <route>
                 <url>^(?!/api/settings(?:/|$)).*</url>
                 <verb>GET,POST,PUT,DELETE</verb>

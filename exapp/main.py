@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import base64
 import logging
-from dotenv import load_dotenv
-import os
 from pathlib import Path
 
 import requests
@@ -19,29 +17,23 @@ from exapp.routes.file_action import router as file_action_router
 from exapp.routes.dashboard import router as dashboard_router
 from exapp.routes.settings import router as settings_router
 from exapp.automation import AutomationScheduler
-from python_organizer_local_llm.settings import SettingsService
+from python_organizer_local_llm.settings import SettingsService, load_environment_settings
 from python_organizer_local_llm.file_types import app_action_mimes
 from python_organizer_local_llm.organizer import Organizer, configure_logging
 
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.exception_handlers import http_exception_handler
 
-load_dotenv()
-APP_ID = os.getenv("APP_ID", "ai_nextcloud_organizer")
-APP_VERSION = os.getenv("APP_VERSION", "0.1.0")
-AA_VERSION = os.getenv("AA_VERSION", "4.0.0")
-APP_SECRET = os.getenv("APP_SECRET", "")
-NEXTCLOUD_URL = os.getenv("NEXTCLOUD_URL", "").rstrip("/")
-if not NEXTCLOUD_URL.startswith(("http://", "https://")):
-    raise RuntimeError(
-        "NEXTCLOUD_URL is missing or invalid. "
-        "Set NEXTCLOUD_URL in the Run Configuration. "
-        "Example: http://192.168.1.2:8080"
-    )
-CONFIG_FILE = os.getenv("AI_ORGANIZER_CONFIG", "config.yaml")
-APP_USER = os.getenv("APP_USER", "admin")
+RUNTIME_SETTINGS = load_environment_settings(load_env_file=True)
+APP_ID = RUNTIME_SETTINGS.app_id
+APP_VERSION = RUNTIME_SETTINGS.app_version
+AA_VERSION = RUNTIME_SETTINGS.app_api_version
+APP_SECRET = RUNTIME_SETTINGS.app_secret
+NEXTCLOUD_URL = RUNTIME_SETTINGS.require_exapp_url()
+CONFIG_FILE = RUNTIME_SETTINGS.config_file
+APP_USER = RUNTIME_SETTINGS.app_user
 
-configure_logging(os.getenv("LOG_LEVEL", "INFO").upper() == "DEBUG")
+configure_logging(RUNTIME_SETTINGS.debug_logging)
 log = logging.getLogger("exapp")
 
 app = FastAPI(title="Nextcloud AI Organizer", version=APP_VERSION)
@@ -78,7 +70,9 @@ async def log_all_requests(request: Request, call_next):
 
     return response
 
-app.state.organizer = Organizer(config_file=CONFIG_FILE)
+app.state.organizer = Organizer(
+    config_file=CONFIG_FILE, runtime_settings=RUNTIME_SETTINGS
+)
 app.state.organizer.database.initialize()
 app.state.settings = SettingsService(app.state.organizer)
 app.state.scheduler = AutomationScheduler(app)
@@ -144,7 +138,7 @@ def _ocs(method, path, json=None, allow_404=False):
     )
 
     if response.text:
-        log.info("AppAPI response: %s", response.text)
+        log.debug("AppAPI response: %s", response.text)
 
     if allow_404 and response.status_code == 404:
         return None
