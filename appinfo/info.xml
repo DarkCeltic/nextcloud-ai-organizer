@@ -30,6 +30,22 @@
 
         <environment-variables>
             <variable>
+                <name>NEXTCLOUD_USERNAME</name>
+                <display-name>Nextcloud Username</display-name>
+                <description>
+                    Nextcloud account AI Organizer will use to access and organize files.
+                </description>
+            </variable>
+
+            <variable>
+                <name>NEXTCLOUD_APP_PASSWORD</name>
+                <display-name>Nextcloud App Password</display-name>
+                <description>
+                    Nextcloud app password for the account used by AI Organizer.
+                </description>
+            </variable>
+
+            <variable>
                 <name>OLLAMA_URL</name>
                 <display-name>Ollama URL</display-name>
                 <description>URL of the Ollama server, for example http://192.168.1.2:11434</description>
